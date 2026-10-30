@@ -1,0 +1,81 @@
+# ⚖️ SK Jurídico — o GitHub monta tudo (o celular não precisa aguentar nada pesado).
+# GitHub → Actions → "Montar o SK Jurídico" → Run workflow. Quando ficar verde ✔,
+# em "Artifacts" aparecem:
+#   📦 Juridico-abre-pelo-index  → um index.html que abre sozinho (celular, PWA, Netlify, pen drive)
+#   📱 Juridico-APK              → o app Android (Capacitor)
+#   💻 Juridico-computador       → a versão com servidor (npm start), para o computador
+name: "Montar o SK Jurídico"
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Instalar as peças
+        run: npm install
+      - name: Montar a versão que abre pelo index
+        run: npm run index
+      - name: Montar a versão do computador (tela + servidor)
+        run: npm run build
+      - name: Conferir que a versão do index é um arquivo só
+        run: |
+          ls -la dist/index
+          test -f dist/index/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Juridico-abre-pelo-index
+          path: dist/index
+          retention-days: 30
+      - name: Juntar a versão do computador
+        run: |
+          mkdir -p pc
+          cp -r dist package.json .npmrc LEIA-ME-1.7.1.md pc/
+          printf '1) npm install --omit=dev\n2) npm start\n3) abra http://localhost:8080\n' > pc/COMO-ABRIR.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Juridico-computador
+          path: pc
+          retention-days: 30
+
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Instalar as peças
+        run: npm install
+      - name: Montar a versão que abre pelo index
+        run: npm run index
+      - name: Criar o projeto Android
+        run: |
+          npx cap add android
+          npx cap sync android
+      - name: Microfone e internet no APK
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q RECORD_AUDIO $M || sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />#' $M
+          grep -n "permission" $M
+      - name: Montar o APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Juridico-APK
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30
